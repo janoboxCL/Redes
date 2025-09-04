@@ -27,6 +27,7 @@ function renderNetwork(drawState, tiposFiltrados){
     : null;
 
   const nodes = [];
+  const POS_SCALE = 600; // más espacio entre nodos
   (drawState.nodes_full || []).forEach(id => {
     const m = Number(metric[id] || 0);
     const norm = maxMetric ? m / maxMetric : 0;
@@ -36,13 +37,25 @@ function renderNetwork(drawState, tiposFiltrados){
     let border = '#444';
     let shape = 'dot';
     let bw = 1;
+    let shadow = false;
     if (conc.has(id)) { border = 'gold'; shape = 'diamond'; }
     else if (patr.has(id)) { border = 'khaki'; }
-    if (riesgo.has(id)) { border = 'red'; bw = 3; }
+    if (riesgo.has(id)) {
+      if (conc.has(id) || patr.has(id)) {
+        shadow = {enabled:true, color:'red', size:15, x:0, y:0};
+      } else {
+        border = 'red';
+        bw = 3;
+      }
+    }
     if (id === seed) { border = '#2b6cb0'; bw = 3; }
     const p = pos[id] || [0,0];
-    nodes.push({id, label:id, x:p[0]*300, y:-p[1]*300, size, shape,
-                color:{background:colorBg, border}, borderWidth:bw, fixed:true});
+    const nodeObj = {id, label:id, x:p[0]*POS_SCALE, y:-p[1]*POS_SCALE,
+                     size, shape,
+                     color:{background:colorBg, border}, borderWidth:bw,
+                     fixed:true};
+    if (shadow) nodeObj.shadow = shadow;
+    nodes.push(nodeObj);
   });
 
   const riesgoEdges = new Set((drawState.edges_riesgo||[]).map(e=>`${e[0]}|${e[1]}`));
@@ -55,9 +68,15 @@ function renderNetwork(drawState, tiposFiltrados){
     const key2 = `${e.v}|${e.u}`;
     let color = '#848484';
     let dashes = false;
-    if (riesgoEdges.has(key1) || riesgoEdges.has(key2)) color = 'red';
-    if (concEdges.has(key1) || concEdges.has(key2)) { color = 'gold'; dashes = true; }
-    edges.push({from:e.u, to:e.v, color:{color}, dashes});
+    let label = '';
+    if (riesgoEdges.has(key1) || riesgoEdges.has(key2)) { color = 'red'; label = tipo; }
+    if (concEdges.has(key1) || concEdges.has(key2)) { color = 'gold'; dashes = true; label = tipo; }
+    const edgeObj = {from:e.u, to:e.v, color:{color}, dashes};
+    if (label) {
+      edgeObj.label = label;
+      edgeObj.font = {background:'white', align:'horizontal'};
+    }
+    edges.push(edgeObj);
   });
 
   const data = {nodes:new vis.DataSet(nodes), edges:new vis.DataSet(edges)};
@@ -66,6 +85,10 @@ function renderNetwork(drawState, tiposFiltrados){
   const container = document.getElementById('network');
   network = new vis.Network(container, data, options);
   container.style.display = 'block';
+  // centrar y dejar un pequeño margen
+  network.fit({animation:false});
+  const currentScale = network.getScale();
+  network.moveTo({scale: currentScale * 0.9});
 }
 
 
