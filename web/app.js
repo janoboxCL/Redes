@@ -2,20 +2,11 @@
 let lastTableRowsExport = [];   // crudo para CSV/XLSX (con DV y SI/NO)
 let lastTableRowsRender = [];   // con chips HTML para la UI
 
-
 let last_png_b64 = null;
-// ---- Pan/Zoom state ----
-let scale = 1, translateX = 0, translateY = 0;
-let initialScale = 1;  // ← recordamos el zoom inicial para el botón "Reset"
-const MIN_SCALE = 0.4, MAX_SCALE = 4, ZOOM_STEP = 0.15;
-
-// CONFIGURA AQUÍ el modo de zoom inicial:
-// - número: p.ej. 0.9 (90%)
-// - 'fit': quepa en ancho y alto
-// - 'width': quepa al ancho
-// - 'height': quepa al alto
-const INITIAL_ZOOM_MODE = 'fit';   // 'fit' | 'width' | 'height' | número
-const INITIAL_ZOOM_MARGIN = 0.95;  // 95% del tamaño calculado (deja borde)
+let network = null;                 // instancia de vis.Network
+let lastGraph = null;               // grafo actualmente mostrado
+let originalGraph = null;           // grafo completo para filtros
+const ZOOM_STEP = 0.2;              // paso de zoom para los botones
 
 
 
@@ -324,44 +315,58 @@ async function getUsuarioRobusto(intentos = 6, delayMs = 400) {
   }
   setLabel("Desconocido");
 }
-
-// ---- Pan/Zoom state ----
-
-function applyTransform() {
-  const img = document.getElementById("img");
-  if (img) img.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+function renderNetwork(graph) {
+  const container = document.getElementById("network");
+  if (!container) return;
+  if (!originalGraph) originalGraph = graph;
+  const nodes = new vis.DataSet(graph.nodes.map(n => ({
+    id: n.id,
+    label: n.id,
+    color: n.es_riesgo ? "#ff6961" : "#97c2fc",
+    title: `Riesgo: ${n.riesgo}`
+  })));
+  const edges = new vis.DataSet(graph.edges.map(e => ({
+    from: e.u,
+    to: e.v,
+    label: e.tipo
+  })));
+  const options = {
+    interaction: { dragView: true, zoomView: true },
+    physics: { stabilization: true }
+  };
+  network = new vis.Network(container, { nodes, edges }, options);
+  lastGraph = graph;
+  network.on("click", params => {
+    if (params.nodes.length > 0) {
+      const id = params.nodes[0];
+      const n = graph.nodes.find(x => x.id === id);
+      if (n) {
+        const info = document.getElementById("nodeInfo");
+        if (info) {
+          info.innerHTML = `<b>${n.id}</b><br/>Riesgo: ${n.riesgo}`;
+          info.style.display = "block";
+        }
+      }
+    }
+  });
 }
 
-function resetView(useInitial = true) {
-  scale = useInitial ? initialScale : 1;
-  translateX = 0;
-  translateY = 0;
-  applyTransform();
-}
-
-// Calcula y aplica el zoom inicial según el modo configurado
-function setInitialView(imgEl, wrapEl) {
-  const nw = imgEl.naturalWidth || imgEl.width;
-  const nh = imgEl.naturalHeight || imgEl.height;
-  const cw = wrapEl.clientWidth;
-  const ch = wrapEl.clientHeight;
-
-  let s;
-  if (typeof INITIAL_ZOOM_MODE === 'number') {
-    s = INITIAL_ZOOM_MODE;
-  } else if (INITIAL_ZOOM_MODE === 'width') {
-    s = cw / nw;
-  } else if (INITIAL_ZOOM_MODE === 'height') {
-    s = ch / nh;
-  } else { // 'fit' (por defecto)
-    s = Math.min(cw / nw, ch / nh);
+function zoomIn() {
+  if (network) {
+    const s = network.getScale();
+    network.moveTo({ scale: s * (1 + ZOOM_STEP) });
   }
+}
 
-  s *= INITIAL_ZOOM_MARGIN;
-  s = Math.max(MIN_SCALE, Math.min(MAX_SCALE, s));
+function zoomOut() {
+  if (network) {
+    const s = network.getScale();
+    network.moveTo({ scale: s * (1 - ZOOM_STEP) });
+  }
+}
 
-  initialScale = s;     // guardamos para el botón Reset
-  resetView(true);      // centra y aplica initialScale
+function zoomReset() {
+  if (network) network.fit();
 }
 
 // ---- Consulta principal ----
@@ -378,15 +383,14 @@ async function consultar() {
 
   // Preparar UI
   document.querySelector(".viewer").style.display = "none";
-  const img = document.getElementById("img");
-  img.style.display = "none";
+  document.getElementById("network").innerHTML = "";
   document.getElementById("descargar").style.display = "none";
   document.getElementById("tabla").innerHTML = "";
+  document.getElementById("nodeInfo").style.display = "none";
   document.getElementById("loader").style.display = "flex";
-  resetView();
 
   try {
-    const res = await window.pywebview.api.calcular(
+      const res = await window.pywebview.api.calcular(
       rut, true, "cobertura", 0.80, 95, 2.0, 50, 0
     );
 
@@ -403,16 +407,11 @@ async function consultar() {
       return;
     }
     
-      last_png_b64 = res.png_b64; 
-      // Mostrar visor e imagen
-      img.src = "data:image/png;base64," + res.png_b64;
-      img.onload = () => {
-        document.querySelector(".viewer").style.display = "block";
-        img.style.display = "block";
-        const wrap = document.getElementById("imgWrap");
-        setInitialView(img, wrap);
-        document.getElementById("descargar").style.display = "inline-block";
-      };
+      last_png_b64 = res.png_b64;
+      originalGraph = null;
+      renderNetwork(res.graph);
+      document.querySelector(".viewer").style.display = "block";
+      document.getElementById("descargar").style.display = "inline-block";
 
     // --- Título + Resumen bajo el título (HTML) ---
     const titleEl = document.getElementById("chartTitle");
@@ -551,31 +550,15 @@ function buildRelFilter(tipos) {
 let redrawTimer = null;
 async function debounceRedraw(){
   clearTimeout(redrawTimer);
-  redrawTimer = setTimeout(async () => {
+  redrawTimer = setTimeout(() => {
     const checked = Array.from(document.querySelectorAll("#relFilterItems input[type='checkbox']:checked"))
                          .map(cb => cb.value);
-
-    // mantener estado actual de pan/zoom
-    const prevScale = scale, prevX = translateX, prevY = translateY;
-
-    document.getElementById("loader").style.display = "flex";
-    try {
-      const res = await window.pywebview.api.redibujar_por_tipos(checked);
-      if (res && res.ok) {
-        last_png_b64 = res.png_b64;
-        const img = document.getElementById("img");
-        img.src = "data:image/png;base64," + res.png_b64;
-        img.onload = () => {
-          // restaurar pan/zoom
-          scale = prevScale; translateX = prevX; translateY = prevY;
-          applyTransform();
-        };
-      } else {
-        alert(res?.msg || "No se pudo redibujar con el filtro.");
-      }
-    } finally {
-      document.getElementById("loader").style.display = "none";
-    }
+    if (!originalGraph) return;
+    const g = {
+      nodes: originalGraph.nodes,
+      edges: originalGraph.edges.filter(e => checked.length === 0 || checked.includes(e.tipo))
+    };
+    renderNetwork(g);
   }, 150);
 }
 
@@ -592,51 +575,9 @@ window.addEventListener("DOMContentLoaded", () => {
   // Usuario: esperar pywebview
   if (window.pywebview) getUsuarioRobusto();
   window.addEventListener("pywebviewready", () => getUsuarioRobusto());
-
-  // Pan & zoom
-  const img = document.getElementById("img");
-  const wrap = document.getElementById("imgWrap");
-
-  // botones
-  document.getElementById("zoomIn").addEventListener("click", () => {
-    scale = Math.min(MAX_SCALE, scale + ZOOM_STEP);
-    applyTransform();
-  });
-  document.getElementById("zoomOut").addEventListener("click", () => {
-    scale = Math.max(MIN_SCALE, scale - ZOOM_STEP);
-    applyTransform();
-  });
-  document.getElementById("zoomReset").addEventListener("click", () => resetView());
-
-  // rueda mouse
-  wrap.addEventListener("wheel", (e) => {
-    e.preventDefault();
-    const dir = Math.sign(e.deltaY);
-    if (dir > 0) scale = Math.max(MIN_SCALE, scale - ZOOM_STEP);
-    else        scale = Math.min(MAX_SCALE, scale + ZOOM_STEP);
-    applyTransform();
-  }, { passive: false });
-
-  // drag (pan)
-  let dragging = false, startX = 0, startY = 0, baseX = 0, baseY = 0;
-
-  img.addEventListener("dragstart", (e) => e.preventDefault());
-  img.addEventListener("mousedown", (e) => {
-    dragging = true;
-    img.style.cursor = "grabbing";
-    startX = e.clientX; startY = e.clientY;
-    baseX = translateX; baseY = translateY;
-  });
-  window.addEventListener("mousemove", (e) => {
-    if (!dragging) return;
-    translateX = baseX + (e.clientX - startX);
-    translateY = baseY + (e.clientY - startY);
-    applyTransform();
-  });
-  window.addEventListener("mouseup", () => {
-    dragging = false;
-    img.style.cursor = "grab";
-  });
+  document.getElementById("zoomIn").addEventListener("click", () => zoomIn());
+  document.getElementById("zoomOut").addEventListener("click", () => zoomOut());
+  document.getElementById("zoomReset").addEventListener("click", () => zoomReset());
 });
 
 document.addEventListener("click", async (e) => {

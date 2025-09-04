@@ -1335,3 +1335,41 @@ def render_png_from_state(draw_state: dict,
     out = base64.b64encode(buf.getvalue()).decode("ascii")
     plt.close(fig)
     return out
+
+
+def draw_state_to_json(draw_state: dict) -> dict:
+    """Convierte el snapshot de dibujo en listas JSON de nodos y aristas."""
+    if not isinstance(draw_state, dict):
+        return {"nodes": [], "edges": []}
+
+    metric_map = {str(k): float(v) for k, v in (draw_state.get("metric_map") or {}).items()}
+    riesgo_set = set(str(x) for x in (draw_state.get("riesgo_set") or []))
+    patrimonio_set = set(str(x) for x in (draw_state.get("patrimonio_set") or []))
+    conc_set = set(str(x) for x in (draw_state.get("concentracion_set") or []))
+    pos_map = {str(k): v for k, v in (draw_state.get("pos_full") or {}).items()}
+
+    nodes = []
+    for nid in draw_state.get("nodes_full", []):
+        nid = str(nid)
+        pos = pos_map.get(nid, (None, None))
+        x = pos[0] if isinstance(pos, (list, tuple)) else None
+        y = pos[1] if isinstance(pos, (list, tuple)) and len(pos) > 1 else None
+        nodes.append({
+            "id": nid,
+            "riesgo": metric_map.get(nid, 0.0),
+            "es_riesgo": nid in riesgo_set,
+            "es_patrimonio": nid in patrimonio_set,
+            "es_concentracion": nid in conc_set,
+            "x": x,
+            "y": y,
+        })
+
+    edges = []
+    for e in draw_state.get("edges_full", []):
+        edges.append({
+            "u": str(e.get("u")),
+            "v": str(e.get("v")),
+            "tipo": e.get("tipo", "")
+        })
+
+    return {"nodes": nodes, "edges": edges}
