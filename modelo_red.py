@@ -1089,13 +1089,21 @@ def calcular_riesgo_red_auto(
         
         draw_state = {
             "seed": seed_rut_int,
-        
+
             # SIEMPRE el conjunto completo (nunca lo sobreescribas al filtrar)
             "nodes_full": [str(n) for n in G.nodes()],
-            "edges_full": [{"u": str(u), "v": str(v), "tipo": str(rel_map.get((u, v), ""))}
-                           for (u, v) in G.edges()],
+            "edges_full": [
+                {
+                    "u": str(u),
+                    "v": str(v),
+                    "tipo": _canon_tipo_rel(rel_map.get((u, v), ""))
+                }
+                for (u, v) in G.edges()
+            ],
+            "edges_riesgo": [(str(u), str(v)) for (u, v) in aristas_riesgo],
+            "edges_concentracion": [(str(u), str(v)) for (u, v) in aristas_conc],
             "pos_full": {str(n): (float(x), float(y)) for n, (x, y) in pos.items()},
-        
+
             # métrica/sets que ya tienes
             "metric_map": df_aportes.set_index("RUT")[col].to_dict(),
             "riesgo_set": set(df_aportes[df_aportes["FLAG_RIESGO"]]["RUT"].astype(str)),
@@ -1109,8 +1117,7 @@ def calcular_riesgo_red_auto(
         for e in draw_state["edges_full"]:
             t = str(e.get("tipo", "")).strip().upper()
             if t:
-                t_norm = MAP_TIPO_REL.get(t, t)   # << aquí usas el diccionario
-                tipos_set.add(t_norm)
+                tipos_set.add(t)
         draw_state["tipos_disponibles"] = sorted(tipos_set)
         
 

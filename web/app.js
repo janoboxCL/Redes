@@ -4,19 +4,69 @@ let lastTableRowsRender = [];   // con chips HTML para la UI
 
 
 let last_png_b64 = null;
-// ---- Pan/Zoom state ----
+let lastDrawState = null;
+let network = null;
+// valores heredados para compatibilidad con funciones no utilizadas
 let scale = 1, translateX = 0, translateY = 0;
-let initialScale = 1;  // ← recordamos el zoom inicial para el botón "Reset"
+let initialScale = 1;
 const MIN_SCALE = 0.4, MAX_SCALE = 4, ZOOM_STEP = 0.15;
+const INITIAL_ZOOM_MODE = 'fit';
+const INITIAL_ZOOM_MARGIN = 0.95;
 
-// CONFIGURA AQUÍ el modo de zoom inicial:
-// - número: p.ej. 0.9 (90%)
-// - 'fit': quepa en ancho y alto
-// - 'width': quepa al ancho
-// - 'height': quepa al alto
-const INITIAL_ZOOM_MODE = 'fit';   // 'fit' | 'width' | 'height' | número
-const INITIAL_ZOOM_MARGIN = 0.95;  // 95% del tamaño calculado (deja borde)
+function renderNetwork(drawState, tiposFiltrados){
+  if(!drawState) return;
+  const pos = drawState.pos_full || {};
+  const metric = drawState.metric_map || {};
+  const riesgo = new Set(drawState.riesgo_set || []);
+  const patr = new Set(drawState.patrimonio_set || []);
+  const conc = new Set(drawState.concentracion_set || []);
+  const seed = String(drawState.seed || "");
+  const maxMetric = Math.max(...Object.values(metric).map(v=>Number(v)||0), 0);
+  const allowed = (tiposFiltrados && tiposFiltrados.length)
+    ? new Set(tiposFiltrados.map(t=>String(t).toUpperCase()))
+    : null;
 
+  const nodes = [];
+  (drawState.nodes_full || []).forEach(id => {
+    const m = Number(metric[id] || 0);
+    const norm = maxMetric ? m / maxMetric : 0;
+    const size = 30 + 120 * norm;
+    const colorBg = m === 0 ? '#f0fff0'
+      : `rgba(255,${Math.round(255*(1-norm))},${Math.round(255*(1-norm))})`;
+    let border = '#444';
+    let shape = 'dot';
+    let bw = 1;
+    if (conc.has(id)) { border = 'gold'; shape = 'diamond'; }
+    else if (patr.has(id)) { border = 'khaki'; }
+    if (riesgo.has(id)) { border = 'red'; bw = 3; }
+    if (id === seed) { border = '#2b6cb0'; bw = 3; }
+    const p = pos[id] || [0,0];
+    nodes.push({id, label:id, x:p[0]*300, y:-p[1]*300, size, shape,
+                color:{background:colorBg, border}, borderWidth:bw, fixed:true});
+  });
+
+  const riesgoEdges = new Set((drawState.edges_riesgo||[]).map(e=>`${e[0]}|${e[1]}`));
+  const concEdges = new Set((drawState.edges_concentracion||[]).map(e=>`${e[0]}|${e[1]}`));
+  const edges = [];
+  (drawState.edges_full || []).forEach(e => {
+    const tipo = String(e.tipo || '');
+    if (allowed && !allowed.has(tipo.toUpperCase())) return;
+    const key1 = `${e.u}|${e.v}`;
+    const key2 = `${e.v}|${e.u}`;
+    let color = '#848484';
+    let dashes = false;
+    if (riesgoEdges.has(key1) || riesgoEdges.has(key2)) color = 'red';
+    if (concEdges.has(key1) || concEdges.has(key2)) { color = 'gold'; dashes = true; }
+    edges.push({from:e.u, to:e.v, color:{color}, dashes});
+  });
+
+  const data = {nodes:new vis.DataSet(nodes), edges:new vis.DataSet(edges)};
+  const options = {physics:false, interaction:{hover:true}};
+  if (network) network.destroy();
+  const container = document.getElementById('network');
+  network = new vis.Network(container, data, options);
+  container.style.display = 'block';
+}
 
 
 // ==== helpers ====
@@ -378,12 +428,13 @@ async function consultar() {
 
   // Preparar UI
   document.querySelector(".viewer").style.display = "none";
+  document.getElementById("network").style.display = "none";
+  document.getElementById("imgWrap").style.display = "none";
   const img = document.getElementById("img");
   img.style.display = "none";
   document.getElementById("descargar").style.display = "none";
   document.getElementById("tabla").innerHTML = "";
   document.getElementById("loader").style.display = "flex";
-  resetView();
 
   try {
     const res = await window.pywebview.api.calcular(
@@ -403,16 +454,12 @@ async function consultar() {
       return;
     }
     
-      last_png_b64 = res.png_b64; 
-      // Mostrar visor e imagen
-      img.src = "data:image/png;base64," + res.png_b64;
-      img.onload = () => {
-        document.querySelector(".viewer").style.display = "block";
-        img.style.display = "block";
-        const wrap = document.getElementById("imgWrap");
-        setInitialView(img, wrap);
-        document.getElementById("descargar").style.display = "inline-block";
-      };
+      last_png_b64 = res.png_b64;
+      lastDrawState = res.draw_state;
+      renderNetwork(lastDrawState);
+      document.querySelector(".viewer").style.display = "block";
+      document.getElementById("imgWrap").style.display = "none";
+      document.getElementById("descargar").style.display = "inline-block";
 
     // --- Título + Resumen bajo el título (HTML) ---
     const titleEl = document.getElementById("chartTitle");
@@ -549,33 +596,12 @@ function buildRelFilter(tipos) {
 }
 
 let redrawTimer = null;
-async function debounceRedraw(){
+function debounceRedraw(){
   clearTimeout(redrawTimer);
-  redrawTimer = setTimeout(async () => {
+  redrawTimer = setTimeout(() => {
     const checked = Array.from(document.querySelectorAll("#relFilterItems input[type='checkbox']:checked"))
                          .map(cb => cb.value);
-
-    // mantener estado actual de pan/zoom
-    const prevScale = scale, prevX = translateX, prevY = translateY;
-
-    document.getElementById("loader").style.display = "flex";
-    try {
-      const res = await window.pywebview.api.redibujar_por_tipos(checked);
-      if (res && res.ok) {
-        last_png_b64 = res.png_b64;
-        const img = document.getElementById("img");
-        img.src = "data:image/png;base64," + res.png_b64;
-        img.onload = () => {
-          // restaurar pan/zoom
-          scale = prevScale; translateX = prevX; translateY = prevY;
-          applyTransform();
-        };
-      } else {
-        alert(res?.msg || "No se pudo redibujar con el filtro.");
-      }
-    } finally {
-      document.getElementById("loader").style.display = "none";
-    }
+    renderNetwork(lastDrawState, checked);
   }, 150);
 }
 
@@ -593,49 +619,20 @@ window.addEventListener("DOMContentLoaded", () => {
   if (window.pywebview) getUsuarioRobusto();
   window.addEventListener("pywebviewready", () => getUsuarioRobusto());
 
-  // Pan & zoom
-  const img = document.getElementById("img");
-  const wrap = document.getElementById("imgWrap");
-
-  // botones
   document.getElementById("zoomIn").addEventListener("click", () => {
-    scale = Math.min(MAX_SCALE, scale + ZOOM_STEP);
-    applyTransform();
+    if (network) {
+      const s = network.getScale();
+      network.moveTo({scale: s + ZOOM_STEP});
+    }
   });
   document.getElementById("zoomOut").addEventListener("click", () => {
-    scale = Math.max(MIN_SCALE, scale - ZOOM_STEP);
-    applyTransform();
+    if (network) {
+      const s = network.getScale();
+      network.moveTo({scale: Math.max(0.1, s - ZOOM_STEP)});
+    }
   });
-  document.getElementById("zoomReset").addEventListener("click", () => resetView());
-
-  // rueda mouse
-  wrap.addEventListener("wheel", (e) => {
-    e.preventDefault();
-    const dir = Math.sign(e.deltaY);
-    if (dir > 0) scale = Math.max(MIN_SCALE, scale - ZOOM_STEP);
-    else        scale = Math.min(MAX_SCALE, scale + ZOOM_STEP);
-    applyTransform();
-  }, { passive: false });
-
-  // drag (pan)
-  let dragging = false, startX = 0, startY = 0, baseX = 0, baseY = 0;
-
-  img.addEventListener("dragstart", (e) => e.preventDefault());
-  img.addEventListener("mousedown", (e) => {
-    dragging = true;
-    img.style.cursor = "grabbing";
-    startX = e.clientX; startY = e.clientY;
-    baseX = translateX; baseY = translateY;
-  });
-  window.addEventListener("mousemove", (e) => {
-    if (!dragging) return;
-    translateX = baseX + (e.clientX - startX);
-    translateY = baseY + (e.clientY - startY);
-    applyTransform();
-  });
-  window.addEventListener("mouseup", () => {
-    dragging = false;
-    img.style.cursor = "grab";
+  document.getElementById("zoomReset").addEventListener("click", () => {
+    if (network) network.fit();
   });
 });
 

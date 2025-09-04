@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>Red de riesgo - Área de Inteligencia Estratégica</title>
+  <link rel="stylesheet" href="vendor/vis-network/vis-network.css">
   <style>
     body {
       font-family: system-ui, sans-serif;
@@ -371,6 +372,7 @@
             
           
         </div>
+      <div id="network" class="img-wrap" style="display:none;"></div>
       <div id="imgWrap" class="img-wrap">
         <img id="img" alt="Gráfico de la red">
       </div>
@@ -405,6 +407,7 @@
 
   </div>
 
+  <script src="vendor/vis-network/vis-network.min.js"></script>
   <script src="app.js"></script>
   
 <script>
