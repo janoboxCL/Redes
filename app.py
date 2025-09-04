@@ -20,8 +20,8 @@ import getpass
 import socket
 
 
-from modelo_red import calcular_riesgo_red_auto  # <- tu función tal cual
-from modelo_red import filtrar_tipo_sin_ros_y_podar_descendientes 
+from modelo_red import calcular_riesgo_red_auto, draw_state_to_json  # <- funciones principales
+from modelo_red import filtrar_tipo_sin_ros_y_podar_descendientes
 # --- arriba del todo, variables globales ---
 
 
@@ -632,7 +632,9 @@ class Api:
             # 3) Serializar la figura a PNG base64      
             
             png_b64 = img_base64
-    
+
+            graph_json = draw_state_to_json(draw_state)
+
             # 4) Serializar tabla (solo columnas clave)
             col_rank = "Riesgo Ajustado" if ("Riesgo Ajustado" in df_aportes.columns) else "Riesgo Ajustado"
            
@@ -644,7 +646,8 @@ class Api:
                 "ok": True,
                 "png_b64": png_b64,
                 "tabla": tabla_json,
-                "meta": meta
+                "meta": meta,
+                "graph": graph_json
             }
         
         except Exception as e:

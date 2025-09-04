@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <title>Red de riesgo - Área de Inteligencia Estratégica</title>
+  <link rel="stylesheet" href="https://unpkg.com/vis-network/styles/vis-network.css" />
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
   <style>
     body {
       font-family: system-ui, sans-serif;
@@ -170,14 +172,18 @@
     }
 
     /* Imagen centrada (oculta hasta tener data) */
-    #img {
-      max-width: none;           /* el scale controla el tamaño */
-      user-select: none;
-      pointer-events: auto;
-      cursor: grab;
-      display: none;             /* inicia oculta */
-      transform-origin: center center;
-      image-rendering: auto;
+    #network {
+      width: 100%;
+      height: 100%;
+    }
+    #nodeInfo {
+      display: none;
+      margin-top: 8px;
+      padding: 6px;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 12px;
     }
 
     /* Botón descargar */
@@ -372,10 +378,10 @@
           
         </div>
       <div id="imgWrap" class="img-wrap">
-        <img id="img" alt="Gráfico de la red">
+        <div id="network"></div>
       </div>
-    
-    
+      <div id="nodeInfo"></div>
+
     <div class="zoom-toolbar">
       <button id="zoomIn" title="Acercar">＋</button>
       <button id="zoomOut" title="Alejar">－</button>
