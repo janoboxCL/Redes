@@ -30,19 +30,22 @@ function renderNetwork(drawState, tiposFiltrados){
   (drawState.nodes_full || []).forEach(id => {
     const m = Number(metric[id] || 0);
     const norm = maxMetric ? m / maxMetric : 0;
-    const size = 30 + 120 * norm;
-    const colorBg = m === 0 ? '#f0fff0'
-      : `rgba(255,${Math.round(255*(1-norm))},${Math.round(255*(1-norm))})`;
+    const size = 30;
+    let colorBg = '#f0fff0';
+    if (m > 0) {
+      const tone = Math.round(255 * (1 - norm));
+      colorBg = `rgb(255,${tone},${tone})`;
+    }
     let border = '#444';
     let shape = 'dot';
     let bw = 1;
+    if (patr.has(id)) { border = 'khaki'; }
     if (conc.has(id)) { border = 'gold'; shape = 'diamond'; }
-    else if (patr.has(id)) { border = 'khaki'; }
-    if (riesgo.has(id)) { border = 'red'; bw = 3; }
     if (id === seed) { border = '#2b6cb0'; bw = 3; }
+    if (riesgo.has(id)) { border = 'red'; bw = 3; }
     const p = pos[id] || [0,0];
     nodes.push({id, label:id, x:p[0]*300, y:-p[1]*300, size, shape,
-                color:{background:colorBg, border}, borderWidth:bw, fixed:true});
+                color:{background:colorBg, border}, borderWidth:bw});
   });
 
   const riesgoEdges = new Set((drawState.edges_riesgo||[]).map(e=>`${e[0]}|${e[1]}`));
@@ -61,7 +64,7 @@ function renderNetwork(drawState, tiposFiltrados){
   });
 
   const data = {nodes:new vis.DataSet(nodes), edges:new vis.DataSet(edges)};
-  const options = {physics:false, interaction:{hover:true}};
+  const options = {physics:false, interaction:{hover:true, dragNodes:true}};
   if (network) network.destroy();
   const container = document.getElementById('network');
   network = new vis.Network(container, data, options);
