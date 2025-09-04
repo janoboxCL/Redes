@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Red de riesgo - Área de Inteligencia Estratégica</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 0;
+      background: #f7f9fa;
+    }
+    
+    /* Espaciado más cómodo entre título, resumen y leyenda */
+    #chartHeader { margin: 10px 0 8px; }
+    #chartTitle { margin-bottom: 4px; }
+    #chartSummary { margin-top: 6px; margin-bottom: 10px; }
+    #chartHeader .legend { margin-top: 8px; }
+    
+    /* Tarjeta con ficha del RUT */
+    .seed-card{
+      background:#fff;
+      border:1px solid #e6e6e6;
+      border-left:4px solid #2b6cb0;
+      border-radius:8px;
+      padding:10px 12px;
+      margin:10px 0 12px;
+      box-shadow:0 1px 2px rgba(0,0,0,0.05);
+      font-size:13px;
+      color:#333;
+    }
+    .seed-card .row{ display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
+    .seed-card .title{ font-weight:700; margin-right:8px; }
+    .seed-pill{
+      display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid #ddd;
+      background:#f8f9fb; font-weight:600; font-size:12px;
+    }
+    .seed-pill.ok{ border-color:#8cc48a; background:#e9f6ea; }
+    .seed-pill.bad{ border-color:#d66; background:#ffe9e9; }
+    .seed-pill.num{ background:#f4f6f8; }
+    .seed-metric{ display:flex; gap:6px; align-items:center; }
+    .seed-metric b{ font-weight:700; }
+
+
+
+    /* Header */
+    header {
+      background: linear-gradient(90deg, #f7941e, #f07d00);
+      color: white;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+    }
+    header .logo {
+      width: 180px;
+      height: 56px;
+      background: #fff;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 16px;
+      box-shadow: 0 0 2px rgba(0,0,0,0.15) inset;
+    }
+    header .logo img {
+      max-height: 46px;
+      max-width: 100%;
+      display: block;
+    }
+    header .titulo {
+      flex: 1;
+      font-size: 20px;
+      font-weight: bold;
+    }
+
+    /* Barra info */
+    .info-bar {
+      text-align: right;
+      font-size: 12px;
+      color: #333;
+      padding: 5px 20px;
+      background: #eee;
+    }
+
+    /* Contenedor principal */
+    .container {
+      width: 80%;
+      margin: 20px auto;
+      background: white;
+      padding: 20px;
+      border-radius: 6px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.1);
+    }
+
+    h2 { margin-top: 0; }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+      align-items: center;
+    }
+
+    input[type=text] {
+      flex: 0 0 200px;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+    }
+
+    button {
+      background: #f7941e;
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:hover { background: #e07c00; }
+
+    /* Loader */
+#loader {
+  display: none;              /* ← oculto al cargar */
+  margin: 10px 0;
+  color: #f07d00;
+  font-style: italic;
+  align-items: center;        /* se aplicará cuando JS lo ponga en flex */
+  gap: 8px;
+}
+#loader img { width: 20px; height: 20px; }
+#loader .css-spinner {
+  display: none;
+  width: 18px; height: 18px;
+  border: 2px solid #f5c08d;
+  border-top-color: #f07d00;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Visor imagen + controles */
+    .viewer { margin-top: 12px; }
+    .zoom-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .zoom-toolbar button {
+      background: #efefef;
+      color: #333;
+      border: 1px solid #ddd;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .zoom-toolbar button:hover { background: #e5e5e5; }
+
+    /* Contenedor con pan/zoom */
+    .img-wrap {
+      width: 100%;
+      height: 70vh;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      overflow: hidden;
+      background: #fafafa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Imagen centrada (oculta hasta tener data) */
+    #img {
+      max-width: none;           /* el scale controla el tamaño */
+      user-select: none;
+      pointer-events: auto;
+      cursor: grab;
+      display: none;             /* inicia oculta */
+      transform-origin: center center;
+      image-rendering: auto;
+    }
+
+    /* Botón descargar */
+    #descargar {
+      display: none;
+      margin-left: auto;
+      background: #28a745;
+    }
+    #descargar:hover { background: #218838; }
+
+    /* Tabla */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+      font-size: 12px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 4px 6px;
+      text-align: left;
+    }
+    th { background: #f5f5f5; }
+    
+    .table-toolbar { display:flex; gap:8px; margin:10px 0 6px; }
+.table-toolbar button{
+  background:#efefef; color:#333; border:1px solid #ddd; padding:6px 10px; border-radius:4px; font-weight:600;
+}
+.table-toolbar button:hover{ background:#e5e5e5; }
+
+/* habilita selección de texto en la tabla */
+#tabla table, #tabla th, #tabla td { user-select:text; }
+
+.resumen-red {
+  font-size: 14px;
+  margin-top: 4px;
+  margin-bottom: 12px;
+}
+
+
+/* ========== ENCABEZADO DE RED ========== */
+.net-summary{ margin:10px 0 8px; text-align:center; }
+.net-title{ font-weight:800; color:#333; font-size:18px; margin:0; }
+.net-subtitle{ color:#444; margin-top:2px; font-size:14px; }
+.net-metrics{ display:flex; justify-content:center; flex-wrap:wrap; gap:8px 10px; margin:8px 0 8px; }
+.pill{
+  display:inline-flex; gap:6px; align-items:center;
+  padding:3px 10px; border:1px solid #e1e5ea; border-radius:999px;
+  background:#fafbfd; font-size:12px; color:#2b2d2f; font-weight:600;
+}
+
+/* deja un poco más de aire a la leyenda */
+#chartHeader .legend{ margin-top:8px; }
+
+/* ========== FICHA DEL RUT ========== */
+.seed-card{
+  background:#fff; border:1px solid #e6e6e6; border-left:4px solid #2b6cb0;
+  border-radius:8px; padding:10px 12px; margin:10px 0 12px;
+  box-shadow:0 1px 2px rgba(0,0,0,0.05); color:#333; font-size:13px;
+}
+.seed-card__head{ font-weight:800; color:#2b6cb0; margin-bottom:6px; }
+.seed-card .row{ display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
+.seed-pill{
+  display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid #ddd;
+  background:#f8f9fb; font-weight:600; font-size:12px;
+}
+.seed-pill.ok{ border-color:#8cc48a; background:#e9f6ea; }
+.seed-pill.bad{ border-color:#d66; background:#ffe9e9; }
+.seed-pill.num{ background:#f4f6f8; }
+.seed-metric{ display:flex; gap:6px; align-items:center; }
+.seed-metric b{ font-weight:700; }
+
+
+
+/* — respiración general — */
+.net-summary{ margin:16px 0 10px; text-align:center; }
+#chartHeader .legend{ margin-top:10px; }
+.viewer{ margin-top:12px; }
+
+/* — ficha del RUT — */
+.seed-card{
+  background:#fff; border:1px solid #e6e6e6; border-left:4px solid #2b6cb0;
+  border-radius:8px; padding:12px 14px; margin:14px 0 14px;
+  box-shadow:0 1px 2px rgba(0,0,0,0.05); color:#333; font-size:13px;
+}
+.seed-card__head{
+  font-weight:800; color:#2b6cb0; margin-bottom:8px; font-size:14px; letter-spacing:.2px;
+}
+.seed-card .row{ display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
+
+.seed-pill{
+  display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid #ddd;
+  background:#f4f6f8; font-weight:600; font-size:12px;
+}
+.seed-pill.ok{ border-color:#8cc48a; background:#e9f6ea; }
+.seed-pill.bad{ border-color:#d66; background:#ffe9e9; }
+
+/* — contadores con severidad (1 claro → 5 oscuro) — */
+.seed-pill.warn1{ background:#ffecec; border-color:#f4b6b6; color:#9b2d2d; }
+.seed-pill.warn2{ background:#ffd9d9; border-color:#ee9a9a; color:#8e2727; }
+.seed-pill.warn3{ background:#ffc7c7; border-color:#e77f7f; color:#822121; }
+.seed-pill.warn4{ background:#ffb3b3; border-color:#e06262; color:#761c1c; }
+.seed-pill.warn5{ background:#ff9e9e; border-color:#d94b4b; color:#6b1616; }
+
+  </style>
+ 
+
+</head>
+<body>
+  <header>
+    <div class="logo"><img src="logo_uaf.jpg" alt="Logo UAF"></div>
+    <div class="titulo">Red de riesgo - Área de Inteligencia Estratégica</div>
+  </header>
+
+  <div class="info-bar">
+    <span id="fecha"></span> | <span id="usuario">Usuario: Desconocido</span>
+  </div>
+
+  <div class="container">
+    <h2>Consulta de relacionados y riesgo</h2>
+    <div class="row">
+      <input type="text" id="rut" placeholder="Ej: 11111111-1">
+      <button id="btn">Consultar</button>
+    </div>
+
+    <!-- Loader con GIF + fallback CSS -->
+    <div id="loader">
+      <img id="loader-gif" src="spinner.gif" alt="Cargando" onerror="this.style.display='none';document.querySelector('#loader .css-spinner').style.display='inline-block';">
+      <span class="css-spinner" aria-hidden="true"></span>
+      <span>Procesando consulta, espere por favor... (redes de gran tamaño pueden tardar un par de minutos)</span>
+    </div>
+
+    <!-- Visor con controles de zoom/pan -->
+    <div class="viewer" style="display:none;">
+      
+      <!-- Título y leyenda (HTML fuera del PNG) -->
+    <div id="seedCard" class="seed-card" style="display:none;">
+      <div class="seed-card__head">Información del RUT consultado</div>
+      <!-- el resto lo llena app.js -->
+    </div>
+
+
+       <div id="chartHeader" class="net-summary">
+      <div id="chartTitle" class="net-title">Red de relacionados</div>
+      
+      <div id="netMetrics" class="net-metrics"></div>
+    
+      <div aria-label="Leyenda" class="legend"
+           style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px;">
+        <div style="font-weight:600;">Leyenda:</div>
+        <!-- deja tu lista tal cual -->
+        <ul style="display:flex;align-items:center;gap:14px;list-style:none;margin:0;padding:0;">
+          
+              <li>
+                <span style="display:inline-block;width:14px;height:14px;border-radius:50%;
+                             border:2px solid #9ac39f;background:#e7f5ea;margin-right:6px;"></span>
+                RUT sin riesgo
+              </li>
+              <li>
+                <span style="display:inline-block;width:14px;height:14px;border-radius:50%;
+                             border:2px solid #9aa3ad;background:#fff;
+                             box-shadow:inset 0 0 0 3px #fff;margin-right:6px;"></span>
+                RUT con patrimonio
+              </li>
+              <li>
+                <span style="display:inline-block;width:14px;height:14px;border-radius:50%;
+                             border:2px solid #cc3e3e;background:#ff6b6b;margin-right:6px;"></span>
+                RUT riesgoso
+              </li>
+              <li>
+                <span style="display:inline-block;width:12px;height:12px;transform:rotate(45deg);
+                             border:2px solid #d6a300;background:#ffd54f;margin-right:6px;"></span>
+                Concentración patrimonio
+              </li>
+              <li>
+                <span style="display:inline-block;width:14px;height:14px;border-radius:50%;
+                             border:2px solid #2b6cb0;background:#fff;
+                             box-shadow:inset 0 0 0 3px #dbeafe;margin-right:6px;"></span>
+                RUT consultado
+              </li>
+              <li>
+                <span style="display:inline-block;width:52px;height:12px;border:1px solid #ccc;
+                             border-radius:2px;background:linear-gradient(90deg,#ffecec,#ff0000);
+                             margin-right:6px;"></span>
+                Escala de riesgo (rojo)
+              </li>
+        </ul>
+      </div>
+    
+
+            
+          
+        </div>
+      <div id="imgWrap" class="img-wrap">
+        <img id="img" alt="Gráfico de la red">
+      </div>
+    
+    
+    <div class="zoom-toolbar">
+      <button id="zoomIn" title="Acercar">＋</button>
+      <button id="zoomOut" title="Alejar">－</button>
+      <button id="zoomReset" title="Restablecer">⭯</button>
+      <button id="descargar" style="display:none;">⬇ Descargar gráfico</button>
+    </div>
+    
+    </div>
+    <!-- Filtros de tipos de relación -->
+<div id="relFilter" class="table-toolbar" style="display:none; align-items:center;">
+  <strong>Tipos de relación:</strong>
+  <div id="relFilterItems" style="display:flex;gap:12px;flex-wrap:wrap; margin-left:8px;"></div>
+  <div style="margin-left:auto; display:flex; gap:8px;">
+    <button id="relCheckAll" type="button">Marcar todo</button>
+    <button id="relUncheckAll" type="button">Desmarcar todo</button>
+  </div>
+   <div id="tableToolbar" class="table-toolbar" style="display:none;">
+     
+     <button id="saveCsv" type="button">Guardar Excel</button>
+   </div>
+</div>
+
+   
+    <div id="tabla"></div>
+
+
+
+  </div>
+
+  <script src="app.js"></script>
+  
+<script>
+  let versionCheckDone = false;
+
+  async function runVersionCheck() {
+    if (versionCheckDone) return;      // evita ejecución doble
+    versionCheckDone = true;
+
+    try {
+      const res = await window.pywebview.api.check_version();
+      if (!res || res.ok !== true) {
+        alert(res && res.msg ? res.msg : "Versión inválida. La aplicación se cerrará.");
+        // Cerrar desde backend (window.close no funciona en pywebview)
+        await window.pywebview.api.exit_app();
+      }
+     
+
+    } catch (e) {
+      console.error("check_version error:", e);
+      alert("Error verificando versión. La aplicación se cerrará xxx.");
+      await window.pywebview.api.exit_app();
+    }
+  }
+
+  // Dispara cuando el bridge está listo. Evita listeners duplicados.
+  function startWhenReady() {
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.check_version) {
+      runVersionCheck();
+      
+      return;
+    }
+    // Se ejecutará UNA vez cuando pywebview inyecte la API
+    window.addEventListener('pywebviewready', runVersionCheck, { once: true });
+  }
+
+  // Inicia al cargar el DOM
+  document.addEventListener('DOMContentLoaded', startWhenReady);
+
+
+
+
+</script>
+
+  
+</body>
+</html>
