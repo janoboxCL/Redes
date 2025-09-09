@@ -163,3 +163,4 @@ def invalidate_params_cache():
     """Si quieres limpiar la cache manualmente (p.ej. botón 'Recargar')."""
     with _LOCK:
         _CACHE.clear()
+
