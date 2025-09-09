@@ -6,6 +6,7 @@ import pandas as pd
 import os, sys
 import matplotlib.pyplot as plt
 import logging, webview
+import math
 
 logging.basicConfig(level=logging.DEBUG)
 from AIE_Dimensiones.business.relacionados import obtener_relacionados
@@ -21,7 +22,8 @@ import socket
 
 
 from modelo_red import calcular_riesgo_red_auto  # <- tu función tal cual
-from modelo_red import filtrar_tipo_sin_ros_y_podar_descendientes 
+from modelo_red import filtrar_tipo_sin_ros_y_podar_descendientes
+from params_loader import load_scoring_params
 # --- arriba del todo, variables globales ---
 
 
@@ -280,6 +282,123 @@ def cargar_edges_para_rut(rut):
     usar_arbol=True          # usa ES_NODO_FINAL para definir padre/hijo
     )
     return df
+
+
+def calcular_png_red(
+    rut,
+    normalizar=True,
+    estrategia="umbral",
+    cobertura=0.80,
+    percentil=95,
+    z=2.0,
+    umbral=50,
+    minimo=3,
+):
+    """Genera el PNG de la red para un RUT dado.
+
+    La parametría siempre se obtiene desde la base de datos.
+    """
+    load_scoring_params(APP_NAME, SQL_CONN_STR, prefer_file=False, reload_mode="auto")
+
+    rut = normalize_rut(rut)
+    edges_df = cargar_edges_para_rut(rut)
+    if edges_df is None or edges_df.empty:
+        return None
+
+    _, _, img_base64, _ = calcular_riesgo_red_auto(
+        edges_df,
+        seed_rut=rut,
+        normalizar=normalizar,
+        estrategia=estrategia,
+        cobertura=cobertura,
+        percentil=percentil,
+        z=z,
+        umbral=umbral,
+        minimo=minimo,
+        maximo=None,
+        dibujar=True,
+        usar_arbol_para_dibujo=True,
+        figsize=(11, 8),
+    )
+    return img_base64
+
+
+def calcular_scoring_red(
+    rut,
+    normalizar=True,
+    estrategia="umbral",
+    cobertura=0.80,
+    percentil=95,
+    z=2.0,
+    umbral=50,
+    minimo=3,
+):
+    """Obtiene métricas de riesgo para la red de un RUT.
+
+    Retorna un diccionario con:
+      - riesgo_asegurado
+      - riesgo_red (promedio de los peores ⌈√n⌉ nodos)
+      - intensidad_red (suma de riesgo ajustado)
+      - detalle (DataFrame con cada nodo)
+
+    La parametría siempre se obtiene desde la base de datos.
+    """
+    load_scoring_params(APP_NAME, SQL_CONN_STR, prefer_file=False, reload_mode="auto")
+
+    rut = normalize_rut(rut)
+    edges_df = cargar_edges_para_rut(rut)
+    if edges_df is None or edges_df.empty:
+        return None
+
+    df_aportes, meta, _, _ = calcular_riesgo_red_auto(
+        edges_df,
+        seed_rut=rut,
+        normalizar=normalizar,
+        estrategia=estrategia,
+        cobertura=cobertura,
+        percentil=percentil,
+        z=z,
+        umbral=umbral,
+        minimo=minimo,
+        maximo=None,
+        dibujar=False,
+        usar_arbol_para_dibujo=True,
+        figsize=(11, 8),
+    )
+
+    if df_aportes is None or df_aportes.empty:
+        return None
+
+    score_col = "SCORE_0_100"
+    rut_col = "RUT"
+
+    intensidad_red = float(df_aportes[score_col].sum()) if score_col in df_aportes.columns else 0.0
+
+    riesgo_red = 0.0
+    if score_col in df_aportes.columns and rut_col in df_aportes.columns:
+        scores_otros = df_aportes.loc[df_aportes[rut_col] != rut, score_col]
+        n = len(scores_otros)
+        if n > 0:
+            m = int(math.ceil(math.sqrt(n)))
+            top_scores = scores_otros.nlargest(m)
+            if not top_scores.empty:
+                riesgo_red = float(top_scores.mean())
+                riesgo_red = max(0.0, min(100.0, riesgo_red))
+
+    riesgo_asegurado = 0.0
+    if rut_col in df_aportes.columns and score_col in df_aportes.columns:
+        fila = df_aportes.loc[df_aportes[rut_col] == rut, score_col]
+        if not fila.empty:
+            riesgo_asegurado = float(fila.iloc[0])
+
+    detalle = df_aportes.copy()
+
+    return {
+        "riesgo_asegurado": riesgo_asegurado,
+        "riesgo_red": riesgo_red,
+        "intensidad_red": intensidad_red,
+        "detalle": detalle,
+    }
 
 
 class Api:

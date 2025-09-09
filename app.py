@@ -21,7 +21,7 @@ import socket
 
 
 from modelo_red import calcular_riesgo_red_auto  # <- tu función tal cual
-from modelo_red import filtrar_tipo_sin_ros_y_podar_descendientes 
+from modelo_red import filtrar_tipo_sin_ros_y_podar_descendientes
 # --- arriba del todo, variables globales ---
 
 
@@ -280,8 +280,6 @@ def cargar_edges_para_rut(rut):
     usar_arbol=True          # usa ES_NODO_FINAL para definir padre/hijo
     )
     return df
-
-
 class Api:
     def __init__(self):
         self._window = None  # se setea al crear la ventana        
