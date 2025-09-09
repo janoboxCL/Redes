@@ -94,7 +94,7 @@ def _extraer_n_nodos(meta: dict) -> int:
 import pyodbc, json, time, socket, getpass, logging
 
 APP_NAME = "AppRedes"        # identifica esta app en la tabla
-APP_VERSION = "1.0.0"     # tu versión actual de la app
+APP_VERSION = "1.2.0"     # tu versión actual de la app
 
 
 def _preflight_checks() -> tuple[bool, str]:
@@ -632,19 +632,31 @@ class Api:
             # 3) Serializar la figura a PNG base64      
             
             png_b64 = img_base64
-    
+
             # 4) Serializar tabla (solo columnas clave)
             col_rank = "Riesgo Ajustado" if ("Riesgo Ajustado" in df_aportes.columns) else "Riesgo Ajustado"
-           
+
             tabla = df_aportes.sort_values(col_rank, ascending=False).head(100)
             tabla_json = json.dumps(tabla.to_dict(orient="records"), ensure_ascii=False)
+
+            def _jsonable(obj):
+                if isinstance(obj, set):
+                    return list(obj)
+                if isinstance(obj, dict):
+                    return {k: _jsonable(v) for k, v in obj.items()}
+                if isinstance(obj, (list, tuple)):
+                    return [_jsonable(x) for x in obj]
+                return obj
+
+            draw_state_json = _jsonable(draw_state)
             dur = int((time.perf_counter() - t0) * 1000)
             log_consulta_sql(rut, True, meta, params, None, dur)
             return {
                 "ok": True,
                 "png_b64": png_b64,
                 "tabla": tabla_json,
-                "meta": meta
+                "meta": meta,
+                "draw_state": draw_state_json,
             }
         
         except Exception as e:
@@ -685,7 +697,7 @@ if __name__ == "__main__":
         
     api = Api()        
     window = webview.create_window(
-        title="Red de riesgo - Área de Inteligencia Estrategica",
+        title="Red de riesgo - Área de Inteligencia Estrategica 1",
         url="web/index.html",
         js_api=api
     )
